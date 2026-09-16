@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 · Symmetric Encryption — exam notes</title>
+<meta name="description" content="Block and stream ciphers, confusion and diffusion, the Feistel structure, DES in full, meet-in-the-middle, Double and Triple DES.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="inner">
+    <a class="home" href="index.html">Modern Cryptography</a>
+    <span class="course">Lecture 02</span>
+  </div>
+</header>
+
+<main class="layout">
+
+  <nav class="toc" aria-label="On this page">
+    <div class="toc-sticky">
+      <h2>On this page</h2>
+      <ol>
+        <li><a href="#symmetric">Symmetric encryption</a></li>
+        <li><a href="#block-stream">Block vs. stream ciphers</a></li>
+        <li><a href="#design">Designing a block cipher</a></li>
+        <li><a href="#confusion">Confusion and diffusion</a></li>
+        <li><a href="#avalanche">Avalanche effect</a></li>
+        <li><a href="#practical">Practical security and strength</a></li>
+        <li><a href="#feistel">Feistel cipher structure</a></li>
+        <li><a href="#des">DES: parameters</a></li>
+        <li><a href="#des-round">DES: the round function</a></li>
+        <li><a href="#des-tables">DES: permutation tables</a></li>
+        <li><a href="#sbox">DES: S-boxes</a></li>
+        <li><a href="#schedule">DES: key schedule</a></li>
+        <li><a href="#des-security">DES: security analysis</a></li>
+        <li><a href="#2des">Double DES and meet-in-the-middle</a></li>
+        <li><a href="#3des">Triple DES</a></li>
+        <li><a href="#recap">Exam recap</a></li>
+      </ol>
+    </div>
+  </nav>
+
+  <article>
+    <p class="lecture-no">Lecture 02</p>
+    <h1>Symmetric Encryption</h1>
+    <p class="standfirst">How a real block cipher is built, why Feistel makes decryption free, and why doubling a key length does not double security.</p>
+
+    <h2 id="symmetric">Symmetric encryption</h2>
+
+    <p>Sender and receiver hold the <strong>same key</strong> — hence symmetric / private / secret key encryption. The transmitted ciphertext is Y = E(K, X) and the receiver computes X = D(K, Y).</p>
+
+    <ul>
+      <li><strong>Covers:</strong> classical encryption, block ciphers (DES, AES, ARIA, SEED), stream ciphers (RC4, ChaCha).</li>
+      <li><strong>Pro:</strong> faster than asymmetric (public key) encryption.</li>
+      <li><strong>Con:</strong> the key-sharing problem, and a large number of keys — n parties who all want to talk pairwise need n(n−1)/2 keys.</li>
+    </ul>
+
+    <h2 id="block-stream">Block vs. stream ciphers</h2>
+
+    <div class="table-wrap">
+      <table class="prose">
+        <caption>The two shapes of symmetric encryption</caption>
+        <tr><th></th><th>Block cipher</th><th>Stream cipher</th></tr>
+        <tr><th>Input</th><td>One block of elements at a time</td><td>Elements continuously</td></tr>
+        <tr><th>Output</th><td>A block for each input block</td><td>One element at a time</td></tr>
+        <tr><th>Key reuse</th><td>The same key encrypts many blocks</td><td>Use a key only once</td></tr>
+        <tr><th>Speed</th><td>Slower</td><td>Faster</td></tr>
+        <tr><th>Examples</th><td>Substitution, permutation, DES, AES, ARIA, SEED</td><td>LFSR cipher, RC4, ChaCha</td></tr>
+        <tr><th>Usage</th><td>More common</td><td>Where throughput matters</td></tr>
+      </table>
+    </div>
+
+    <div class="box attack">
+      <span class="label">Why a stream key is single-use</span>
+      <p>The keystream is XORed in, so a known plaintext hands over the key directly:</p>
+      <div class="formula">M ⊕ C = M ⊕ (M ⊕ k) = k</div>
+      <p>And two messages under the same keystream give C₁ ⊕ C₂ = M₁ ⊕ M₂.</p>
+    </div>
+
+    <h2 id="design">Designing a block cipher</h2>
+
+    <p>A symmetric block cipher is a sequence of <strong>rounds</strong> built from <strong>substitutions</strong> and <strong>permutations</strong>, controlled by a <strong>key</strong>. The design parameters — a likely short-answer question:</p>
+
+    <ul>
+      <li>Block size</li>
+      <li>Key size</li>
+      <li>Number of rounds</li>
+      <li>Subkey generation algorithm</li>
+      <li>Round function</li>
+      <li>Fast software / hardware encryption and decryption</li>
+      <li>Ease of security analysis</li>
+    </ul>
+
+    <p>The first three trade security against speed; the last two are why an elegant cipher beats a complicated one.</p>
+
+    <h2 id="confusion">Confusion and diffusion</h2>
+
+    <div class="box def">
+      <span class="label">The two fundamental design principles</span>
+      <ul>
+        <li><strong>Confusion</strong> — make the relationship between the <em>key</em> and the <em>ciphertext</em> as complex as possible.</li>
+        <li><strong>Diffusion</strong> — spread the influence of each <em>plaintext</em> bit over many <em>ciphertext</em> bits.</li>
+      </ul>
+    </div>
+
+    <p>Which building block delivers which:</p>
+    <ul>
+      <li>Nonlinear substitution (S-box) ⇒ <strong>confusion</strong></li>
+      <li>Permutation / linear mixing over several rounds ⇒ <strong>diffusion</strong></li>
+    </ul>
+
+    <p>DES and AES both repeat these two operations over many rounds. Neither alone is enough: substitution without permutation never spreads a change; permutation without substitution stays linear, and linear ciphers fall to the linear algebra seen in Lecture 1.</p>
+
+    <div class="box def">
+      <span class="label">Design principle</span>
+      <p>A small change in the plaintext or the key should result in a large, seemingly unpredictable change in the ciphertext.</p>
+    </div>
+
+    <h2 id="avalanche">Avalanche effect</h2>
+
+    <p><strong>Changing one input bit should change many output bits.</strong> For an n-bit block cipher, the ideal is that a one-bit input change flips roughly half the output bits on average.</p>
+
+    <p>Repeated rounds amplify small differences:</p>
+    <div class="formula">small input difference → S-box → permutation/mixing → many changed bits</div>
+
+    <div class="box tip">
+      <span class="label">The caveat that gets examined</span>
+      <p>The avalanche effect is a useful <em>design criterion</em>, not a <em>proof of security</em>. A cipher can avalanche beautifully and still be broken — see linear cryptanalysis of DES.</p>
+    </div>
+
+    <h2 id="practical">Practical security and security strength</h2>
+
+    <p>In practice the security of a system is estimated by the computational resources the <em>best known attack</em> requires. A cryptosystem counts as practically secure if either:</p>
+    <ul>
+      <li>the cost of breaking the cipher exceeds the value of the encrypted information, or</li>
+      <li>the time to break it exceeds the useful lifetime of the information.</li>
+    </ul>
+
+    <p>Both are economic statements, not mathematical ones — which is the contrast with the one-time pad's perfect secrecy.</p>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>NIST key-length recommendations (2020). Rows are matched security strengths — read across.</caption>
+        <tr>
+          <th>Period</th><th>Strength</th><th>Symmetric</th><th>Factoring modulus</th><th>DL key</th><th>DL size</th><th>Elliptic curve</th><th>Hash (A)</th>
+        </tr>
+        <tr><td>Legacy</td><td>80</td><td>2TDEA</td><td>1024</td><td>160</td><td>1024</td><td>160</td><td>SHA-1</td></tr>
+        <tr><td>2019–2030</td><td>112</td><td>3TDEA, AES-128</td><td>2048</td><td>224</td><td>2048</td><td>224</td><td>SHA-224, SHA-512/224, SHA3-224</td></tr>
+        <tr><td>2019–2030 &amp; beyond</td><td>128</td><td>AES-128</td><td>3072</td><td>256</td><td>3072</td><td>256</td><td>SHA-256, SHA-512/256, SHA3-256</td></tr>
+        <tr><td>2019–2030 &amp; beyond</td><td>192</td><td>AES-192</td><td>7680</td><td>384</td><td>7680</td><td>384</td><td>SHA-384, SHA3-384</td></tr>
+        <tr><td>2019–2030 &amp; beyond</td><td>256</td><td>AES-256</td><td>15360</td><td>512</td><td>15360</td><td>512</td><td>SHA-512, SHA3-512</td></tr>
+      </table>
+    </div>
+
+    <p>The shape of the table matters more than the digits: symmetric keys grow linearly with strength, elliptic-curve keys at about twice the strength, and factoring / discrete-log moduli explode — 128-bit strength costs 3072 RSA bits but only 256 EC bits.</p>
+
+    <h2 id="feistel">Feistel cipher structure</h2>
+
+    <p>First designed by Horst Feistel in 1973. Input: a plaintext block of 2w bits and a key K. The block is split into halves L₀ and R₀, which pass through n identically-structured rounds and are recombined into the ciphertext.</p>
+
+    <div class="box def">
+      <span class="label">One Feistel round</span>
+      <div class="formula">Lᵢ = Rᵢ₋₁
+Rᵢ = Lᵢ₋₁ ⊕ F(Rᵢ₋₁, Kᵢ)</div>
+      <p>Inverting a round, given (Lᵢ, Rᵢ):</p>
+      <div class="formula">Rᵢ₋₁ = Lᵢ
+Lᵢ₋₁ = Rᵢ ⊕ F(Lᵢ, Kᵢ)</div>
+    </div>
+
+    <div class="box tip">
+      <span class="label">The two consequences to state in an exam</span>
+      <ol>
+        <li>The round function <strong>F need not be invertible</strong> — it is only ever evaluated forwards, in both encryption and decryption. That frees the designer to make F as nonlinear and messy as they like.</li>
+        <li>Decryption is the <em>same circuit</em> with the round keys reversed: K<sub>n</sub>, K<sub>n−1</sub>, …, K₁. One piece of hardware does both jobs.</li>
+      </ol>
+    </div>
+
+    <h2 id="des">DES: parameters</h2>
+
+    <p>Adopted in 1977 by the National Bureau of Standards (now NIST) as FIPS PUB 46.</p>
+
+    <div class="table-wrap">
+      <table class="prose">
+        <caption>DES at a glance</caption>
+        <tr><th>Plaintext / ciphertext block</th><td>64 bits</td></tr>
+        <tr><th>Key</th><td>64 bits, including 8 parity bits — <strong>effective key length 56 bits</strong></td></tr>
+        <tr><th>Rounds</th><td>16, on a variant of the Feistel structure</td></tr>
+        <tr><th>Subkeys</th><td>16 generated from the key, one per round, 48 bits each</td></tr>
+        <tr><th>Key schedule</th><td>Encryption K₁ → K₂ → … → K₁₆; decryption K₁₆ → K₁₅ → … → K₁</td></tr>
+      </table>
+    </div>
+
+    <p>Overall flow: plaintext → initial permutation IP → 16 Feistel rounds → 32-bit halves swapped → IP⁻¹ → ciphertext.</p>
+
+    <h2 id="des-round">DES: the round function</h2>
+
+    <p>Each round takes the 32-bit half R<sub>i−1</sub> and the 48-bit subkey K<sub>i</sub>, and runs four stages:</p>
+
+    <div class="formula">R (32 bits)
+  → E: expansion/permutation           → 48 bits
+  → XOR with Kᵢ (48 bits)              → 48 bits
+  → S: eight S-boxes, 6 bits → 4 bits  → 32 bits
+  → P: permutation                     → 32 bits
+then  Lᵢ = Rᵢ₋₁,  Rᵢ = Lᵢ₋₁ ⊕ F(Rᵢ₋₁, Kᵢ)</div>
+
+    <p>The expansion exists so the 32-bit half can be XORed with a 48-bit subkey and so that each input bit feeds two S-boxes; the P permutation carries each S-box's output into different S-boxes next round, which is where the diffusion comes from.</p>
+
+    <h2 id="des-tables">DES: permutation tables</h2>
+
+    <div class="box def">
+      <span class="label">How to read a permutation table</span>
+      <p>Let the 64-bit plaintext be P = (p₁, p₂, …, p₆₄). The i-th entry of the table says which input bit moves to the i-th output position:</p>
+      <div class="formula">IP[i] = j  ⟹  IP(P)ᵢ = p_j</div>
+      <p>So the first entry 58 means "output bit 1 is input bit 58". Read the tables row by row, left to right.</p>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>Initial permutation (IP)</caption>
+        <tr><td>58</td><td>50</td><td>42</td><td>34</td><td>26</td><td>18</td><td>10</td><td>2</td></tr>
+        <tr><td>60</td><td>52</td><td>44</td><td>36</td><td>28</td><td>20</td><td>12</td><td>4</td></tr>
+        <tr><td>62</td><td>54</td><td>46</td><td>38</td><td>30</td><td>22</td><td>14</td><td>6</td></tr>
+        <tr><td>64</td><td>56</td><td>48</td><td>40</td><td>32</td><td>24</td><td>16</td><td>8</td></tr>
+        <tr><td>57</td><td>49</td><td>41</td><td>33</td><td>25</td><td>17</td><td>9</td><td>1</td></tr>
+        <tr><td>59</td><td>51</td><td>43</td><td>35</td><td>27</td><td>19</td><td>11</td><td>3</td></tr>
+        <tr><td>61</td><td>53</td><td>45</td><td>37</td><td>29</td><td>21</td><td>13</td><td>5</td></tr>
+        <tr><td>63</td><td>55</td><td>47</td><td>39</td><td>31</td><td>23</td><td>15</td><td>7</td></tr>
+      </table>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>Inverse initial permutation (IP⁻¹)</caption>
+        <tr><td>40</td><td>8</td><td>48</td><td>16</td><td>56</td><td>24</td><td>64</td><td>32</td></tr>
+        <tr><td>39</td><td>7</td><td>47</td><td>15</td><td>55</td><td>23</td><td>63</td><td>31</td></tr>
+        <tr><td>38</td><td>6</td><td>46</td><td>14</td><td>54</td><td>22</td><td>62</td><td>30</td></tr>
+        <tr><td>37</td><td>5</td><td>45</td><td>13</td><td>53</td><td>21</td><td>61</td><td>29</td></tr>
+        <tr><td>36</td><td>4</td><td>44</td><td>12</td><td>52</td><td>20</td><td>60</td><td>28</td></tr>
+        <tr><td>35</td><td>3</td><td>43</td><td>11</td><td>51</td><td>19</td><td>59</td><td>27</td></tr>
+        <tr><td>34</td><td>2</td><td>42</td><td>10</td><td>50</td><td>18</td><td>58</td><td>26</td></tr>
+        <tr><td>33</td><td>1</td><td>41</td><td>9</td><td>49</td><td>17</td><td>57</td><td>25</td></tr>
+      </table>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>Expansion permutation (E), 32 bits → 48 bits</caption>
+        <tr><td>32</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td></tr>
+        <tr><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td></tr>
+        <tr><td>8</td><td>9</td><td>10</td><td>11</td><td>12</td><td>13</td></tr>
+        <tr><td>12</td><td>13</td><td>14</td><td>15</td><td>16</td><td>17</td></tr>
+        <tr><td>16</td><td>17</td><td>18</td><td>19</td><td>20</td><td>21</td></tr>
+        <tr><td>20</td><td>21</td><td>22</td><td>23</td><td>24</td><td>25</td></tr>
+        <tr><td>24</td><td>25</td><td>26</td><td>27</td><td>28</td><td>29</td></tr>
+        <tr><td>28</td><td>29</td><td>30</td><td>31</td><td>32</td><td>1</td></tr>
+      </table>
+    </div>
+
+    <p>Notice the overlap: rows share their edge bits, so each of the 32 input bits appears once or twice among the 48 outputs. That is the expansion.</p>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>Permutation function (P), applied after the S-boxes</caption>
+        <tr><td>16</td><td>7</td><td>20</td><td>21</td><td>29</td><td>12</td><td>28</td><td>17</td></tr>
+        <tr><td>1</td><td>15</td><td>23</td><td>26</td><td>5</td><td>18</td><td>31</td><td>10</td></tr>
+        <tr><td>2</td><td>8</td><td>24</td><td>14</td><td>32</td><td>27</td><td>3</td><td>9</td></tr>
+        <tr><td>19</td><td>13</td><td>30</td><td>6</td><td>22</td><td>11</td><td>4</td><td>25</td></tr>
+      </table>
+    </div>
+
+    <h2 id="sbox">DES: S-boxes</h2>
+
+    <p>Eight S-boxes, S<sub>i</sub> : {0,1}<sup>6</sup> → {0,1}<sup>4</sup> for 1 ≤ i ≤ 8. They are the <em>only nonlinear part</em> of DES.</p>
+
+    <div class="box def">
+      <span class="label">How to evaluate an S-box</span>
+      <p>For input b₀b₁b₂b₃b₄b₅:</p>
+      <ul>
+        <li><strong>Row</strong> = the outer two bits (b₀b₅), a number 0–3.</li>
+        <li><strong>Column</strong> = the inner four bits (b₁b₂b₃b₄), a number 0–15.</li>
+      </ul>
+      <p>Look up the entry, write it as 4 bits.</p>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>S₁ — columns 0–15 left to right, rows 0–3 top to bottom</caption>
+        <tr><td>14</td><td>4</td><td>13</td><td>1</td><td>2</td><td>15</td><td>11</td><td>8</td><td>3</td><td>10</td><td>6</td><td>12</td><td>5</td><td>9</td><td>0</td><td>7</td></tr>
+        <tr><td>0</td><td>15</td><td>7</td><td>4</td><td>14</td><td>2</td><td>13</td><td>1</td><td>10</td><td>6</td><td>12</td><td>11</td><td>9</td><td>5</td><td>3</td><td>8</td></tr>
+        <tr><td>4</td><td>1</td><td>14</td><td>8</td><td>13</td><td>6</td><td>2</td><td>11</td><td>15</td><td>12</td><td>9</td><td>7</td><td>3</td><td>10</td><td>5</td><td>0</td></tr>
+        <tr><td>15</td><td>12</td><td>8</td><td>2</td><td>4</td><td>9</td><td>1</td><td>7</td><td>5</td><td>11</td><td>3</td><td>14</td><td>10</td><td>0</td><td>6</td><td>13</td></tr>
+      </table>
+    </div>
+
+    <div class="box ex">
+      <span class="label">Worked example — S₁(011011)</span>
+      <div class="formula">b₀b₅ = 0,1 → row 1
+b₁b₂b₃b₄ = 1101 → column 13
+
+S₁ row 1, column 13 = 5 = 0101</div>
+      <p>Six bits in, four bits out — which is also why the S-box is not invertible, and why Feistel's "F need not be invertible" matters.</p>
+    </div>
+
+    <h2 id="schedule">DES: key schedule</h2>
+
+    <p><strong>Permuted choice 1 (PC-1)</strong> permutes the 64-bit key and discards its 8 parity bits. The remaining 56 bits are split into C₀ and D₀ of 28 bits each.</p>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>Permuted choice 1 (PC-1) — left half gives C₀, right half gives D₀</caption>
+        <tr><th colspan="7">Left (C₀)</th><th colspan="7">Right (D₀)</th></tr>
+        <tr><td>57</td><td>49</td><td>41</td><td>33</td><td>25</td><td>17</td><td>9</td><td>63</td><td>55</td><td>47</td><td>39</td><td>31</td><td>23</td><td>15</td></tr>
+        <tr><td>1</td><td>58</td><td>50</td><td>42</td><td>34</td><td>26</td><td>18</td><td>7</td><td>62</td><td>54</td><td>46</td><td>38</td><td>30</td><td>22</td></tr>
+        <tr><td>10</td><td>2</td><td>59</td><td>51</td><td>43</td><td>35</td><td>27</td><td>14</td><td>6</td><td>61</td><td>53</td><td>45</td><td>37</td><td>29</td></tr>
+        <tr><td>19</td><td>11</td><td>3</td><td>60</td><td>52</td><td>44</td><td>36</td><td>21</td><td>13</td><td>5</td><td>28</td><td>20</td><td>12</td><td>4</td></tr>
+      </table>
+    </div>
+
+    <p>Each round then does: left-rotate C and D independently, then apply <strong>PC-2</strong>, a permutation-with-contraction that selects 48 of the 56 bits as the subkey K<sub>i</sub>.</p>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>Permuted choice 2 (PC-2), 56 bits → 48 bits</caption>
+        <tr><td>14</td><td>17</td><td>11</td><td>24</td><td>1</td><td>5</td></tr>
+        <tr><td>3</td><td>28</td><td>15</td><td>6</td><td>21</td><td>10</td></tr>
+        <tr><td>23</td><td>19</td><td>12</td><td>4</td><td>26</td><td>8</td></tr>
+        <tr><td>16</td><td>7</td><td>27</td><td>20</td><td>13</td><td>2</td></tr>
+        <tr><td>41</td><td>52</td><td>31</td><td>37</td><td>47</td><td>55</td></tr>
+        <tr><td>30</td><td>40</td><td>51</td><td>45</td><td>33</td><td>48</td></tr>
+        <tr><td>44</td><td>49</td><td>39</td><td>56</td><td>34</td><td>53</td></tr>
+        <tr><td>46</td><td>42</td><td>50</td><td>36</td><td>29</td><td>32</td></tr>
+      </table>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>Rotations in the key schedule</caption>
+        <tr><th>Round</th><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td><td>10</td><td>11</td><td>12</td><td>13</td><td>14</td><td>15</td><td>16</td></tr>
+        <tr><th>Left shifts</th><td>1</td><td>1</td><td>2</td><td>2</td><td>2</td><td>2</td><td>2</td><td>2</td><td>1</td><td>2</td><td>2</td><td>2</td><td>2</td><td>2</td><td>2</td><td>1</td></tr>
+      </table>
+    </div>
+
+    <div class="box tip">
+      <span class="label">A detail worth noticing</span>
+      <p>The shifts sum to 28 — a full rotation — so after round 16 the registers are back where they started. That is what lets decryption regenerate the subkeys in reverse order by rotating right instead of left.</p>
+    </div>
+
+    <h2 id="des-security">DES: security analysis</h2>
+
+    <p>All parts of DES are linear except the S-boxes.</p>
+
+    <div class="box attack">
+      <span class="label">Brute force — 2<sup>56</sup> candidate keys</span>
+      <ul>
+        <li>CRYPTO '93 rump session: Michael Wiener presented a detailed key-search machine design — expected 1.5 days with 1993 technology for $100,000.</li>
+        <li>1998: the Electronic Frontier Foundation built a key-search machine costing $250,000; record 56 hours, July 1998.</li>
+        <li>1999: RSA Laboratory found a DES key in 22 hours 15 minutes.</li>
+      </ul>
+    </div>
+
+    <div class="box attack">
+      <span class="label">Linear cryptanalysis (Mitsuru Matsui)</span>
+      <ul>
+        <li>Generate 2<sup>43</sup> plaintext–ciphertext pairs: 40 days.</li>
+        <li>Find the key: 10 days.</li>
+      </ul>
+      <p>It approximates the S-boxes by linear expressions that hold slightly more often than half the time, then accumulates the bias over huge numbers of pairs. The cost is in the data, not the computation.</p>
+    </div>
+
+    <h2 id="2des">Double DES and meet-in-the-middle</h2>
+
+    <div class="box def">
+      <span class="label">Double DES</span>
+      <div class="formula">For two independent 56-bit keys K₁, K₂:
+  C = E(K₂, E(K₁, P))
+  P = D(K₁, D(K₂, C))</div>
+      <p>Total key length 56 + 56 = 112 bits, so exhaustive search naively looks like 2<sup>112</sup>.</p>
+    </div>
+
+    <p>But rearranging the encryption equation gives the meeting point:</p>
+    <div class="formula">E(K₁, P) = D(K₂, C)</div>
+    <p>Both sides can be computed from one key each, so the attacker never has to guess both at once.</p>
+
+    <div class="box attack">
+      <span class="label">Meet-in-the-middle attack</span>
+      <p>Assume a known plaintext–ciphertext pair (P, C).</p>
+      <ol>
+        <li>For every K₁ ∈ {0,1}<sup>56</sup>, compute X<sub>K₁</sub> = E(K₁, P) and store the pair (X<sub>K₁</sub>, K₁) in a table.</li>
+        <li>For every K₂ ∈ {0,1}<sup>56</sup>, compute Y<sub>K₂</sub> = D(K₂, C) and look Y<sub>K₂</sub> up in the table.</li>
+        <li>If X<sub>K₁</sub> = Y<sub>K₂</sub>, then (K₁, K₂) is a <em>candidate</em> key. Verify it on a second plaintext–ciphertext pair — the 64-bit block is smaller than the 112-bit key space, so false matches are expected.</li>
+      </ol>
+      <div class="formula">Time ≈ 2⁵⁷        Memory ≈ 2⁵⁶</div>
+      <p>Double DES therefore does <strong>not</strong> provide 112-bit security. It buys one bit of time over single DES, at the price of an enormous table.</p>
+    </div>
+
+    <div class="box tip">
+      <span class="label">The general lesson</span>
+      <p>Composing a cipher with itself trades memory for time; it does not add key strength. Any time an exam shows you a two-stage encryption with independent keys, reach for meet-in-the-middle and the 2<sup>n+1</sup> / 2<sup>n</sup> cost pair.</p>
+    </div>
+
+    <h2 id="3des">Triple DES</h2>
+
+    <div class="box def">
+      <span class="label">Triple DES (EDE)</span>
+      <div class="formula">Enc(K = (K₁, K₂, K₃), P) = E(K₃, D(K₂, E(K₁, P)))
+Dec(K = (K₁, K₂, K₃), C) = D(K₁, E(K₂, D(K₃, C)))</div>
+      <p>Encrypt–decrypt–encrypt, not encrypt three times. Setting K₁ = K₂ = K₃ makes 3DES compute plain DES, which is how it stays backwards compatible with legacy equipment.</p>
+    </div>
+
+    <ul>
+      <li>Standardised for financial applications in ANSI X9.17, 1985.</li>
+      <li>Plaintext size = ciphertext size = 64 bits.</li>
+      <li><strong>Nominal key length:</strong> three-key 3DES 168 bits; two-key 3DES (K₁ = K₃) 112 bits.</li>
+      <li><strong>Security strength:</strong> three-key 3DES gives only about <strong>112-bit</strong> security, because of meet-in-the-middle attacks.</li>
+    </ul>
+
+    <div class="table-wrap">
+      <table class="prose">
+        <caption>Triple DES weighed up</caption>
+        <tr><th>Attractions</th><td>Secure against the brute-force attacks that killed DES; compatible with legacy DES implementations</td></tr>
+        <tr><th>Weak points</th><td>64-bit block size (small, relative to a 168-bit key); slow in software</td></tr>
+      </table>
+    </div>
+
+    <p>The small block is a real problem, not a cosmetic one: with a 64-bit block, repeated ciphertext blocks start appearing after roughly 2<sup>32</sup> blocks by the birthday bound, which leaks plaintext structure regardless of key length. That, plus the software speed, is why AES replaced it.</p>
+
+    <h2 id="recap">Exam recap</h2>
+
+    <div class="table-wrap">
+      <table class="prose">
+        <caption>Numbers most likely to be asked for</caption>
+        <tr><th>Quantity</th><th>Value</th></tr>
+        <tr><td>DES block size</td><td>64 bits</td></tr>
+        <tr><td>DES key, nominal / effective</td><td>64 / 56 bits (8 parity bits discarded by PC-1)</td></tr>
+        <tr><td>DES rounds and subkeys</td><td>16 rounds, 16 subkeys of 48 bits</td></tr>
+        <tr><td>DES halves</td><td>32 bits each; C and D registers 28 bits each</td></tr>
+        <tr><td>S-box</td><td>6 bits → 4 bits, eight of them</td></tr>
+        <tr><td>DES brute force</td><td>2<sup>56</sup></td></tr>
+        <tr><td>Linear cryptanalysis of DES</td><td>2<sup>43</sup> pairs</td></tr>
+        <tr><td>Double DES: nominal / actual</td><td>112-bit key; 2<sup>57</sup> time, 2<sup>56</sup> memory</td></tr>
+        <tr><td>Triple DES: nominal / actual</td><td>168-bit key (three-key); ~112-bit security</td></tr>
+      </table>
+    </div>
+
+    <div class="box tip">
+      <span class="label">Likely essay questions</span>
+      <ol>
+        <li>Define confusion and diffusion and say which DES component provides each.</li>
+        <li>Explain why the Feistel round function need not be invertible, and why decryption uses the subkeys in reverse.</li>
+        <li>Describe the meet-in-the-middle attack on Double DES and give its time and memory cost.</li>
+        <li>Explain why Triple DES offers 112-bit rather than 168-bit security.</li>
+        <li>Trace one DES round for a given R and subkey using the E, S₁ and P tables.</li>
+      </ol>
+    </div>
+
+    <nav class="pager">
+      <a href="01-introduction.html">← 01 · Introduction to Cryptography</a>
+      <span>Next lecture →</span>
+    </nav>
+  </article>
+</main>
+
+<footer class="site">
+  <div class="inner">
+    Slide sources: Paar &amp; Pelzl; Stallings &amp; Brown; Stallings, <em>Cryptography and Network Security</em>; Trappe &amp; Washington.
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modern Cryptography — exam notes</title>
+<meta name="description" content="Revision notes for Modern Cryptography (Korea University, Changmin Lee).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="inner">
+    <a class="home" href="index.html">Modern Cryptography</a>
+    <span class="course">Revision notes · Korea University · Changmin Lee</span>
+  </div>
+</header>
+
+<main class="layout">
+  <div></div>
+  <article>
+    <h1>Exam notes</h1>
+    <p class="standfirst">Everything from the lecture slides, rewritten so it can be read straight through the night before. Definitions are blue, worked examples green, attacks red.</p>
+
+    <section class="cipher" aria-label="Shift cipher demonstration">
+      <p class="cipher-line" id="cipherLine">ATTACK AT DAWN</p>
+      <div class="cipher-controls">
+        <label for="shift">Shift key K</label>
+        <input type="range" id="shift" min="0" max="25" value="0" step="1">
+        <output id="shiftOut" for="shift">0</output>
+      </div>
+      <p style="margin:1rem 0 0;font-size:0.92rem;color:var(--muted)">Enc(K, x) = (x + K) mod 26. Twenty-six keys, so twenty-six guesses — which is exactly why this is Lecture 1 material and not a cipher anyone uses.</p>
+    </section>
+
+    <h2>Lectures</h2>
+    <ol class="deck">
+      <li>
+        <a href="01-introduction.html">
+          <span class="num">01</span>
+          <span>
+            <span class="title">Introduction to Cryptography</span>
+            <span class="topics">Kerckhoff's principle · attack models · shift, affine, substitution, Vigenère, permutation, Hill · LFSR · one-time pad</span>
+          </span>
+        </a>
+      </li>
+      <li>
+        <a href="02-symmetric-encryption.html">
+          <span class="num">02</span>
+          <span>
+            <span class="title">Symmetric Encryption</span>
+            <span class="topics">block vs stream · confusion and diffusion · Feistel · DES in full · meet-in-the-middle · 2DES and 3DES</span>
+          </span>
+        </a>
+      </li>
+      <li>
+        <span class="deck-slot">
+          <a class="pending" aria-disabled="true" href="#">
+            <span class="num">03</span>
+            <span>
+              <span class="title">Next lecture</span>
+              <span class="topics">Drop a new page in the folder and add a line here.</span>
+            </span>
+          </a>
+        </span>
+      </li>
+    </ol>
+
+    <h2>How to use this</h2>
+    <ul>
+      <li><strong>Blue boxes</strong> are the definitions you may be asked to state verbatim. Learn the formulas, not the prose around them.</li>
+      <li><strong>Red boxes</strong> are attacks. For each cipher, know the attack model it breaks under (ciphertext-only, known-plaintext, chosen-plaintext) and the cost.</li>
+      <li>The key-size and complexity numbers (26!, 2<sup>56</sup>, 2<sup>57</sup>, 112-bit) are the most commonly examined facts in this material. Learn them cold.</li>
+      <li>Every page prints cleanly — Ctrl/Cmd+P drops the navigation and colours the boxes for paper.</li>
+    </ul>
+
+    <h2>Adding a lecture</h2>
+    <p>Copy any lecture page, change the heading, table of contents and pager links, then add one <code>&lt;li&gt;</code> to the list above. The stylesheet in <code>assets/style.css</code> is shared, so nothing else needs touching.</p>
+  </article>
+</main>
+
+<footer class="site">
+  <div class="inner">
+    Notes compiled from the course slides. Sources cited on the slides: Katz &amp; Lindell; Stallings &amp; Brown; Stinson; Trappe &amp; Washington; Paar &amp; Pelzl.
+  </div>
+</footer>
+
+<script>
+(function () {
+  var plain = "ATTACK AT DAWN";
+  var line = document.getElementById("cipherLine");
+  var slider = document.getElementById("shift");
+  var out = document.getElementById("shiftOut");
+
+  function shift(text, k) {
+    return text.replace(/[A-Z]/g, function (c) {
+      return String.fromCharCode(((c.charCodeAt(0) - 65 + k) % 26) + 65);
+    });
+  }
+  function render() {
+    var k = Number(slider.value);
+    line.textContent = shift(plain, k);
+    out.textContent = k;
+  }
+  slider.addEventListener("input", render);
+  render();
+
+  // One quiet pass through the key space on load, then stop.
+  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    var k = 0;
+    var t = setInterval(function () {
+      k += 1;
+      if (k > 9) { clearInterval(t); return; }
+      slider.value = k;
+      render();
+    }, 110);
+  }
+})();
+</script>
+
+</body>
+</html>

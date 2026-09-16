@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 · Introduction to Cryptography — exam notes</title>
+<meta name="description" content="Kerckhoff's principle, attack models, and the classical ciphers: shift, affine, substitution, Vigenère, permutation, LFSR and the one-time pad.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="inner">
+    <a class="home" href="index.html">Modern Cryptography</a>
+    <span class="course">Lecture 01</span>
+  </div>
+</header>
+
+<main class="layout">
+
+  <nav class="toc" aria-label="On this page">
+    <div class="toc-sticky">
+      <h2>On this page</h2>
+      <ol>
+        <li><a href="#scope">What modern cryptography covers</a></li>
+        <li><a href="#encryption">Encryption and its terminology</a></li>
+        <li><a href="#kerckhoff">Kerckhoff's principle</a></li>
+        <li><a href="#attacks">Attack models</a></li>
+        <li><a href="#notation">Notation for classical ciphers</a></li>
+        <li><a href="#shift">Shift cipher</a></li>
+        <li><a href="#affine">Affine cipher</a></li>
+        <li><a href="#substitution">Substitution cipher</a></li>
+        <li><a href="#frequency">Frequency analysis</a></li>
+        <li><a href="#vigenere">Vigenère cipher</a></li>
+        <li><a href="#permutation">Permutation and Hill ciphers</a></li>
+        <li><a href="#lfsr">LFSR and the LFSR cipher</a></li>
+        <li><a href="#otp">One-time pad</a></li>
+        <li><a href="#recap">Exam recap</a></li>
+      </ol>
+    </div>
+  </nav>
+
+  <article>
+    <p class="lecture-no">Lecture 01</p>
+    <h1>Introduction to Cryptography</h1>
+    <p class="standfirst">The vocabulary, the threat models, and the classical ciphers that every later attack is measured against.</p>
+
+    <h2 id="scope">What modern cryptography covers</h2>
+
+    <div class="box def">
+      <span class="label">Definition — Modern cryptography</span>
+      <p>The scientific study of techniques for securing digital information, transactions, and distributed computations.</p>
+    </div>
+
+    <p>The field splits into four layers, and a question asking you to "classify" something usually wants this list:</p>
+    <ul>
+      <li><strong>Primitives</strong> — hash functions (data integrity), random number generators.</li>
+      <li><strong>Schemes</strong> — encryption (confidentiality), signatures (data integrity).</li>
+      <li><strong>Protocols</strong> — identification (authenticity), key establishment, secret sharing.</li>
+      <li><strong>Applications</strong> — secure internet protocols, electronic cash.</li>
+    </ul>
+
+    <h2 id="encryption">Encryption and its terminology</h2>
+
+    <p>Encryption is the technique that provides <strong>data confidentiality</strong>. Any encryption scheme, symmetric or not, is three algorithms:</p>
+
+    <div class="formula">Setup(λ) → (K_Enc, K_Dec)
+Enc(K_Enc, M) → CT
+Dec(K_Dec, CT) → M</div>
+
+    <p>Where λ is the security parameter. The two families:</p>
+
+    <div class="table-wrap">
+      <table class="prose">
+        <caption>Symmetric vs. asymmetric encryption</caption>
+        <tr><th></th><th>Symmetric (secret / private key)</th><th>Asymmetric (public key)</th></tr>
+        <tr><th>Keys</th><td>K_Enc = K_Dec, shared by both parties</td><td>Encryption key ≠ decryption key</td></tr>
+        <tr><th>Kinds</th><td>Block cipher, stream cipher</td><td>Factoring-based, discrete-log-based, post-quantum (lattice-, code-based)</td></tr>
+        <tr><th>Examples</th><td>DES, AES, ARIA, SEED; RC4, ChaCha</td><td>RSA, ElGamal, NTRU</td></tr>
+        <tr><th>Pros</th><td>Fast</td><td>Easy key sharing, few keys needed</td></tr>
+        <tr><th>Cons</th><td>Key-sharing problem, large number of keys</td><td>Slow</td></tr>
+      </table>
+    </div>
+
+    <h3>Terminology to be able to state</h3>
+    <ul>
+      <li><strong>Plaintext</strong> — the original message fed into the algorithm.</li>
+      <li><strong>Ciphertext</strong> — the output of the encryption algorithm.</li>
+      <li><strong>Encryption algorithm</strong> — takes a plaintext and a key, returns a ciphertext.</li>
+      <li><strong>Decryption algorithm</strong> — takes a ciphertext and a key, returns a plaintext.</li>
+      <li><strong>Private key</strong> (symmetric) — an input to both algorithms; both depend on it.</li>
+      <li><strong>Public and private key</strong> (asymmetric) — a pair selected for encryption and decryption respectively.</li>
+    </ul>
+
+    <h2 id="kerckhoff">Kerckhoff's principle</h2>
+
+    <p>Stated by the Dutch cryptographer Auguste Kerckhoffs in the late 19th century. It is the cryptographic form of the <strong>Open Design</strong> security principle.</p>
+
+    <div class="box def">
+      <span class="label">Kerckhoff's principle</span>
+      <p>The cipher method — the encryption and decryption algorithms — must not be required to be secret, and it must be able to fall into the hands of the adversary without inconvenience.</p>
+    </div>
+
+    <p>Three arguments in its favour:</p>
+    <ol>
+      <li>Keeping a short key secret is easier than keeping an algorithm secret.</li>
+      <li>Recovery is easier once a key is exposed — you replace a key, not a whole system.</li>
+      <li>Parties can talk to many different counterparties by varying keys rather than algorithms.</li>
+    </ol>
+
+    <h2 id="attacks">Attack models</h2>
+
+    <p>Two broad categories. <strong>Brute-force</strong> tries every possible key against a target ciphertext until an intelligible plaintext appears; its cost is the size of the key space. <strong>Cryptanalysis</strong> exploits structure, and is classified by what the adversary is given:</p>
+
+    <div class="table-wrap">
+      <table class="prose">
+        <caption>Cryptanalytic attack models, weakest adversary first</caption>
+        <tr><th>Attack</th><th>Information given to the adversary</th></tr>
+        <tr><td>Ciphertext only</td><td>Ciphertexts</td></tr>
+        <tr><td>Known plaintext</td><td>Pairs of plaintexts and ciphertexts</td></tr>
+        <tr><td>Chosen plaintext</td><td>Ciphertexts of plaintexts <em>chosen by the adversary</em></td></tr>
+        <tr><td>Chosen ciphertext</td><td>Plaintexts of ciphertexts <em>chosen by the adversary</em></td></tr>
+      </table>
+    </div>
+
+    <div class="box tip">
+      <span class="label">Exam framing</span>
+      <p>The models get progressively stronger. A scheme broken under ciphertext-only is worthless; a scheme that survives chosen-ciphertext is the strong case. When asked "which attack breaks cipher X", name the <em>weakest</em> model that suffices.</p>
+    </div>
+
+    <h2 id="notation">Notation for classical ciphers</h2>
+
+    <p>ℤ<sub>m</sub> = {0, 1, …, m−1}, and <code>g mod p</code> is the remainder when g is divided by p. Note the sign convention on negatives:</p>
+
+    <div class="formula">10 mod 3   = 1
+729 mod 31 = 16      since 729 = 23·31 + 16
+−7 mod 26  = 19      since −7 = 26·(−1) + 19</div>
+
+    <p>For all classical ciphers here, plaintext space = ciphertext space = alphabet = ℤ<sub>26</sub>, with a = 0 through z = 25.</p>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>Letter–number correspondence</caption>
+        <tr><td>a</td><td>b</td><td>c</td><td>d</td><td>e</td><td>f</td><td>g</td><td>h</td><td>i</td><td>j</td><td>k</td><td>l</td><td>m</td></tr>
+        <tr><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td><td>10</td><td>11</td><td>12</td></tr>
+        <tr><td>n</td><td>o</td><td>p</td><td>q</td><td>r</td><td>s</td><td>t</td><td>u</td><td>v</td><td>w</td><td>x</td><td>y</td><td>z</td></tr>
+        <tr><td>13</td><td>14</td><td>15</td><td>16</td><td>17</td><td>18</td><td>19</td><td>20</td><td>21</td><td>22</td><td>23</td><td>24</td><td>25</td></tr>
+      </table>
+    </div>
+
+    <h2 id="shift">Shift cipher</h2>
+
+    <div class="box def">
+      <span class="label">Definition — Shift cipher</span>
+      <div class="formula">For 0 ≤ K ≤ 25:
+  Enc(K, x) = (x + K) mod 26        K = 3 is the Caesar cipher
+  Dec(K, Y) = (Y − K) mod 26</div>
+    </div>
+
+    <div class="box ex">
+      <span class="label">Worked example — K = 9</span>
+      <div class="formula">shift  = (18  7  8  5 19)  --(+9 mod 26)-->  (1 16 17 14  2) = BQROC
+BQROC = ( 1 16 17 14  2)  --(−9 mod 26)-->  (18 7  8  5 19) = shift</div>
+    </div>
+
+    <div class="box attack">
+      <span class="label">Attacks</span>
+      <ul>
+        <li><strong>Brute force:</strong> only 26 candidate keys.</li>
+        <li><strong>Known plaintext:</strong> one letter is enough. Given (shift, BQROC), K = B − s = (1 − 18) mod 26 = 9.</li>
+      </ul>
+    </div>
+
+    <h2 id="affine">Affine cipher</h2>
+
+    <div class="box def">
+      <span class="label">Definition — Affine cipher</span>
+      <div class="formula">For K = (α, β) with α, β ∈ ℤ₂₆ and gcd(α, 26) = 1:
+  Enc(K, x) = (αx + β) mod 26
+  Dec(K, Y) = α⁻¹(Y − β) mod 26</div>
+      <p>The condition gcd(α, 26) = 1 is what makes α invertible mod 26, and therefore what makes decryption possible at all. Expect to be asked why it is needed.</p>
+    </div>
+
+    <div class="box ex">
+      <span class="label">Worked example — K = (α, β) = (7, 3)</span>
+      <div class="formula">hot = (7 14 19)  --(7x + 3)-->  (52 101 136) mod 26 = (0 23 6) = AXG</div>
+    </div>
+
+    <div class="box attack">
+      <span class="label">Attacks</span>
+      <ul>
+        <li><strong>Brute force:</strong> 12 × 26 = 312 keys. The twelve valid α are 1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25 — every odd number below 26 except 13.</li>
+        <li><strong>Known plaintext:</strong> two letter pairs give two linear equations. From (hot, AXG):
+          <div class="formula">7α + β  =  0 mod 26
+14α + β = 23 mod 26     ⟹  α = 7, β = 3</div>
+          Recovering β needs 7⁻¹ = 15 mod 26, since 15 · 7 = 105 = 1 mod 26.</li>
+      </ul>
+    </div>
+
+    <h2 id="substitution">Substitution cipher</h2>
+
+    <div class="box def">
+      <span class="label">Definition — Substitution cipher</span>
+      <div class="formula">For K = π, a permutation on ℤ₂₆:
+  Enc(K, x) = π(x)
+  Dec(K, Y) = π⁻¹(Y)</div>
+    </div>
+
+    <div class="box attack">
+      <span class="label">Attacks</span>
+      <ul>
+        <li><strong>Brute force:</strong> 26! ≈ 4 × 10<sup>26</sup> ≈ 2<sup>88.3</sup> keys — far beyond exhaustive search, yet the cipher is still broken easily. This is the lecture's central point: <em>a large key space is necessary but not sufficient for security.</em></li>
+        <li><strong>Chosen plaintext:</strong> n known pairs cut the candidates to (26 − n)!.</li>
+        <li><strong>Ciphertext only:</strong> frequency analysis, below.</li>
+      </ul>
+    </div>
+
+    <h2 id="frequency">Frequency analysis</h2>
+
+    <p>A substitution cipher is monoalphabetic: each plaintext letter always maps to the same ciphertext letter, so the frequency <em>distribution</em> survives encryption intact — only the labels move. Compare the ciphertext's letter counts against average English frequencies (e ≈ 12.7%, t ≈ 9.0%, a ≈ 8.2%, o ≈ 7.5%, i ≈ 7.0%, n ≈ 6.7%; the rare tail is j, k, q, x, z).</p>
+
+    <div class="box ex">
+      <span class="label">Worked example from the slides</span>
+      <div class="formula">YIFQFMZRWQFYVECFMDZPCVMRZWNMDZVEJBTXCDDUMJ
+NDIFEFMDZCDMQZKCEYFCJMYRNCWJCSZREXCHZUNMXZ
+NZUCDRJXYYSMRTMEYIFZWDYVZVYFZUMRZCRWNZDZJJ
+XZWGCHSMRNMDHNCMFQCHZJMXJZWIEJYUCFWDJNZDIR</div>
+      <p>Counting gives Z = 20, M = 16, C = 15, D = 13, J = 11, F = 11, R = 10, Y = 10. Z is the clear outlier, so guess Dec(K, Z) = e and work outwards from short words and common digraphs. The plaintext begins: "Our friend from Paris examined his empty glass with surprise, as if evaporation had taken place while he wasn't looking…"</p>
+    </div>
+
+    <h2 id="vigenere">Vigenère cipher</h2>
+
+    <p>Named after Blaise de Vigenère, 16th century. The step it represents is <strong>monoalphabetic → polyalphabetic</strong>: one plaintext letter now maps to different ciphertext letters depending on its position, which flattens the frequency distribution.</p>
+
+    <div class="box def">
+      <span class="label">Definition — Vigenère cipher</span>
+      <div class="formula">For K = (k₁, k₂, …, k_m) ∈ (ℤ₂₆)^m:
+  Enc(K, x₁, …, x_m) = (x₁ + k₁, …, x_m + k_m)
+  Dec(K, Y₁, …, Y_m) = (Y₁ − k₁, …, Y_m − k_m)</div>
+      <p>It is m interleaved shift ciphers, one per position in the key.</p>
+    </div>
+
+    <div class="box attack">
+      <span class="label">Attacks</span>
+      <ul>
+        <li><strong>Brute force:</strong> 26<sup>m</sup> keys; for m = 18, 26<sup>18</sup> ≈ 2<sup>84.6</sup>.</li>
+        <li><strong>Ciphertext only:</strong> statistical tests such as the <strong>Kasiski test</strong> — repeated ciphertext substrings tend to sit a multiple of m apart, so the gcd of the gaps reveals m. Once m is known, split the ciphertext into m classes and frequency-analyse each as a shift cipher.</li>
+        <li><strong>Known plaintext:</strong> easy, if m is known — subtract.</li>
+      </ul>
+    </div>
+
+    <h2 id="permutation">Permutation and Hill ciphers</h2>
+
+    <div class="box def">
+      <span class="label">Definition — Permutation cipher</span>
+      <div class="formula">For K = π, a permutation of {1, …, m}:
+  Enc(K, x₁, …, x_m) = (x_π(1), …, x_π(m))
+  Dec(K, Y₁, …, Y_m) = (Y_π⁻¹(1), …, Y_π⁻¹(m))</div>
+      <p>Equivalently, as a matrix product (x₁ … x_m)·P = (Y₁ … Y_m) where P is a permutation matrix. Generalising P from a permutation matrix to any <em>invertible</em> matrix over ℤ₂₆ gives the <strong>Hill cipher</strong>.</p>
+    </div>
+
+    <p>Note the difference in what they do: a permutation cipher provides <strong>transposition only</strong> — the letter frequencies are completely unchanged, because no letter is ever replaced. Substitution ciphers change letters but not positions. Real block ciphers do both, which is the bridge into Lecture 2.</p>
+
+    <div class="box attack">
+      <span class="label">Attacks</span>
+      <ul>
+        <li><strong>Brute force:</strong> m! keys; for m = 25, 25! ≈ 2<sup>83.68</sup>.</li>
+        <li><strong>Known / chosen plaintext:</strong> m "independent" plaintext–ciphertext vectors are enough to solve for P⁻¹ by linear algebra. Being linear is the fatal weakness.</li>
+      </ul>
+    </div>
+
+    <h2 id="lfsr">LFSR and the LFSR cipher</h2>
+
+    <div class="box def">
+      <span class="label">Definition — Linear feedback shift register</span>
+      <p>A shift register whose input bit is a linear function of its previous state.</p>
+    </div>
+
+    <p>Example I: a register satisfying the linear relation x<sub>m+3</sub> = x<sub>m+1</sub> + x<sub>m</sub>.</p>
+
+    <div class="box ex">
+      <span class="label">Worked example — 5-stage register</span>
+      <div class="formula">seed: x₁=0, x₂=1, x₃=0, x₄=0, x₅=0
+rule: x_{n+5} = x_n + x_{n+2} mod 2
+
+output: 0100001001011001111100011…</div>
+      <p>A short key (the seed) stretches into a long keystream — this is the idea behind every stream cipher, and the reason a pseudorandom generator is the object of study rather than the pad itself.</p>
+    </div>
+
+    <div class="box def">
+      <span class="label">Definition — LFSR cipher</span>
+      <div class="formula">For a linear function f(z₁, …, z_ℓ) = Σᵢ cᵢ zᵢ with constants cᵢ,
+and key K = (k₁, …, k_ℓ) ∈ (ℤ₂)^ℓ:
+
+  Enc(K, (x₁, …, x_m)) = (x₁ ⊕ k₁, …, x_m ⊕ k_m)
+  Dec(K, (y₁, …, y_m)) = (y₁ ⊕ k₁, …, y_m ⊕ k_m)
+
+where k_j = f(k_{j−ℓ}, k_{j−ℓ+1}, …, k_{j−1}) for ℓ+1 ≤ j ≤ m</div>
+      <p>The first ℓ bits are the key; every later keystream bit is generated by the recurrence.</p>
+    </div>
+
+    <div class="box attack">
+      <span class="label">Known-plaintext attack — three steps</span>
+      <ol>
+        <li>Recover k₁, …, k<sub>ℓ</sub> (indeed 2ℓ keystream bits) from the pairs, since kᵢ = xᵢ ⊕ yᵢ.</li>
+        <li>Build the ℓ × ℓ system from those bits and solve for the unknown coefficients c:
+          <div class="formula">⎛ k₁    k₂   …  k_ℓ     ⎞ ⎛c₁⎞   ⎛k_{ℓ+1}⎞
+⎜ k₂    k₃   …  k_{ℓ+1} ⎟ ⎜c₂⎟ = ⎜k_{ℓ+2}⎟
+⎜  ⋮     ⋮       ⋮      ⎟ ⎜ ⋮⎟   ⎜   ⋮   ⎟
+⎝ k_ℓ  k_{ℓ+1} … k_{2ℓ−1}⎠ ⎝c_ℓ⎠   ⎝ k_{2ℓ} ⎠
+
+                 := K</div>
+        </li>
+        <li>If the matrix K is invertible, solve for c, then run the recurrence forward to generate the whole keystream (k₁, …, k<sub>m</sub>).</li>
+      </ol>
+      <p>Total cost: 2ℓ known plaintext bits and one matrix inversion. Linearity kills it.</p>
+    </div>
+
+    <h2 id="otp">One-time pad</h2>
+
+    <p>Developed by Gilbert Vernam and Joseph Mauborgne in 1918.</p>
+
+    <div class="box def">
+      <span class="label">Definition — One-time pad</span>
+      <div class="formula">Plaintext space = ciphertext space = key space = (ℤ₂)^m
+
+For K = (k₁, …, k_m) ∈ (ℤ₂)^m:
+  Enc(K, x₁, …, x_m) = K ⊕ (x₁, …, x_m)
+  Dec(K, Y₁, …, Y_m) = K ⊕ (Y₁, …, Y_m)</div>
+      <p>The key must be truly random, as long as the message, and used exactly once and then destroyed.</p>
+    </div>
+
+    <ul>
+      <li><strong>Pro:</strong> perfect secrecy — an unbreakable cryptosystem. Given a ciphertext, every plaintext of that length remains equally likely, so the ciphertext leaks nothing but the length.</li>
+      <li><strong>Con:</strong> efficiency. A fresh key is needed every time, and it is as long as the message, so the key-distribution problem is as hard as the original message-delivery problem.</li>
+    </ul>
+
+    <div class="box attack">
+      <span class="label">Why "one-time" is not advice but a requirement</span>
+      <p>Reusing K across two messages gives C₁ ⊕ C₂ = M₁ ⊕ M₂ — the key cancels and the adversary is left with a classical problem. The same arithmetic breaks any XOR stream cipher under known plaintext: M ⊕ C = M ⊕ (M ⊕ k) = k.</p>
+    </div>
+
+    <h2 id="recap">Exam recap</h2>
+
+    <div class="table-wrap">
+      <table class="prose">
+        <caption>Classical ciphers: key space and the attack that breaks each</caption>
+        <tr><th>Cipher</th><th>Key</th><th>Key space</th><th>Broken by</th></tr>
+        <tr><td>Shift</td><td>K ∈ ℤ₂₆</td><td>26</td><td>Brute force; one known letter</td></tr>
+        <tr><td>Affine</td><td>(α, β), gcd(α,26)=1</td><td>312</td><td>Brute force; two known letters</td></tr>
+        <tr><td>Substitution</td><td>π on ℤ₂₆</td><td>26! ≈ 2<sup>88.3</sup></td><td>Frequency analysis (ciphertext only)</td></tr>
+        <tr><td>Vigenère</td><td>(k₁…k_m)</td><td>26<sup>m</sup>; 2<sup>84.6</sup> at m = 18</td><td>Kasiski test, then per-position frequency analysis</td></tr>
+        <tr><td>Permutation / Hill</td><td>π, or matrix P</td><td>m!; 25! ≈ 2<sup>83.68</sup></td><td>Linear algebra on m known pairs</td></tr>
+        <tr><td>LFSR</td><td>ℓ-bit seed</td><td>2<sup>ℓ</sup></td><td>2ℓ known bits, solve linear system</td></tr>
+        <tr><td>One-time pad</td><td>K, |K| = |M|</td><td>2<sup>m</sup></td><td>Nothing — if K is random and used once</td></tr>
+      </table>
+    </div>
+
+    <div class="box tip">
+      <span class="label">The three threads to carry into Lecture 2</span>
+      <ol>
+        <li>A big key space does not imply security (26! and still broken by hand).</li>
+        <li>Linearity is fatal — permutation, Hill and LFSR ciphers all fall to linear algebra. This is why DES has S-boxes and why "all parts are linear except the S-box" is worth remembering.</li>
+        <li>Perfect secrecy exists but is impractical, so everything that follows settles for <em>practical</em> security: breaking it must cost more than the information is worth.</li>
+      </ol>
+    </div>
+
+    <nav class="pager">
+      <span>← Start of course</span>
+      <a href="02-symmetric-encryption.html">02 · Symmetric Encryption →</a>
+    </nav>
+  </article>
+</main>
+
+<footer class="site">
+  <div class="inner">
+    Slide sources: Katz &amp; Lindell ch. 1; Stallings &amp; Brown ch. 2, 20, 21; Stinson ch. 1; Trappe &amp; Washington ch. 1–2.
+  </div>
+</footer>
+
+</body>
+</html>
