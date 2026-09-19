@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>03 · AES — exam notes</title>
+<meta name="description" content="The Advanced Encryption Standard: GF(2^8) arithmetic, the extended Euclidean algorithm, SubBytes, ShiftRows, MixColumns, AddRoundKey, key expansion, and security.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="inner">
+    <a class="home" href="index.html">Modern Cryptography</a>
+    <span class="course">Lecture 03</span>
+  </div>
+</header>
+
+<main class="layout">
+
+  <nav class="toc" aria-label="On this page">
+    <div class="toc-sticky">
+      <h2>On this page</h2>
+      <ol>
+        <li><a href="#overview">AES at a glance</a></li>
+        <li><a href="#fields">Mathematical background: fields</a></li>
+        <li><a href="#gf28">Representing bytes in GF(2⁸)</a></li>
+        <li><a href="#arithmetic">GF(2⁸) addition and multiplication</a></li>
+        <li><a href="#euclid">Inverses: the extended Euclidean algorithm</a></li>
+        <li><a href="#state">Hex notation and the state</a></li>
+        <li><a href="#round">Round structure</a></li>
+        <li><a href="#subbytes">SubBytes: the S-box</a></li>
+        <li><a href="#sbox-design">Why the S-box is built this way</a></li>
+        <li><a href="#shiftrows">ShiftRows</a></li>
+        <li><a href="#mixcolumns">MixColumns</a></li>
+        <li><a href="#addroundkey">AddRoundKey</a></li>
+        <li><a href="#keyexpansion">Key expansion</a></li>
+        <li><a href="#security">AES: security</a></li>
+        <li><a href="#recap">Exam recap</a></li>
+      </ol>
+    </div>
+  </nav>
+
+  <article>
+    <p class="lecture-no">Lecture 03</p>
+    <h1>Advanced Encryption Standard</h1>
+    <p class="standfirst">DES replaced its ad-hoc S-boxes with one algebraic idea — the inverse in GF(2⁸) — and built every other stage to be fast, invertible, and provably linear.</p>
+
+    <h2 id="overview">AES at a glance</h2>
+
+    <p>Also known as <strong>Rijndael</strong>, developed by Vincent Rijmen and Joan Daemen, selected by the five-year NIST standardization process in 2001.</p>
+
+    <div class="table-wrap">
+      <table class="prose">
+        <caption>AES specification</caption>
+        <tr><th>Block size</th><td>128 bits, fixed</td></tr>
+        <tr><th>Key size</th><td>128 / 192 / 256 bits</td></tr>
+        <tr><th>Rounds</th><td>10 / 12 / 14, matching the key size</td></tr>
+        <tr><th>Underlying structure</th><td>Substitution-Permutation Network (SPN) — <em>not</em> Feistel</td></tr>
+      </table>
+    </div>
+
+    <div class="box tip">
+      <span class="label">The structural difference from DES worth stating</span>
+      <p>DES is Feistel: half the block passes through unchanged each round, which is why decryption reuses the same F. AES is an <strong>SPN</strong>: every byte of the whole block is transformed every round, so encryption and decryption use genuinely different, mutually inverse operations (InvSubBytes, InvShiftRows, InvMixColumns) rather than the same circuit run backwards.</p>
+    </div>
+
+    <h2 id="fields">Mathematical background: fields</h2>
+
+    <div class="box def">
+      <span class="label">Definition — Field</span>
+      <p>A set 𝔽 with two operations, addition and multiplication, supporting +, −, ×, ÷ — division by every nonzero element. For a, b, c ∈ 𝔽:</p>
+      <div class="formula">Associativity:   (a + b) + c = a + (b + c),   (ab)c = a(bc)
+Commutativity:   a + b = b + a,   ab = ba
+Distributivity:  a(b + c) = ab + ac
+Identities 0 and 1 exist.
+Every a has an additive inverse −a.
+Every a ≠ 0 has a multiplicative inverse a⁻¹, with aa⁻¹ = 1.</div>
+    </div>
+
+    <ul>
+      <li>ℚ, ℝ, ℂ are fields.</li>
+      <li>ℤ is <strong>not</strong> a field — 3 ≠ 0 but 3⁻¹ = 1/3 ∉ ℤ.</li>
+      <li>ℤ<sub>m</sub> = {0, 1, …, m−1} under addition and multiplication mod m: a <strong>field iff m is prime</strong>. If m is composite, ℤ<sub>m</sub> is not a field.</li>
+    </ul>
+
+    <div class="box def">
+      <span class="label">Definition — Finite field</span>
+      <p>A field with finitely many elements. The simplest examples are ℤ<sub>p</sub> for p prime.</p>
+    </div>
+
+    <div class="box ex">
+      <span class="label">Worked example — ℤ₅ = {0,1,2,3,4}</span>
+      <div class="formula">2 + 4 = 1  (mod 5)
+2 · 3 = 1  (mod 5)   ⟹  3 is the multiplicative inverse of 2</div>
+    </div>
+
+    <h2 id="gf28">Representing bytes in GF(2⁸)</h2>
+
+    <p>An AES byte is 8 bits: b₇b₆b₅b₄b₃b₂b₁b₀. Represent it as a polynomial over 𝔽₂:</p>
+
+    <div class="formula">b₇X⁷ + b₆X⁶ + ⋯ + b₁X + b₀,     each bᵢ ∈ {0, 1}</div>
+
+    <div class="box ex">
+      <span class="label">Worked example</span>
+      <div class="formula">11001011  ⟷  X⁷ + X⁶ + X³ + X + 1</div>
+    </div>
+
+    <p>There are exactly 2⁸ = 256 such polynomials of degree less than 8 — one per byte value. AES fixes the irreducible polynomial</p>
+
+    <div class="formula">P(X) = X⁸ + X⁴ + X³ + X + 1     (irreducible in ℤ₂[X])</div>
+
+    <p>and identifies the 256 byte values with the elements of</p>
+
+    <div class="formula">GF(2⁸) = 𝔽₂[X] / ⟨X⁸ + X⁴ + X³ + X + 1⟩</div>
+
+    <p>All arithmetic — AES's confusion, diffusion and key schedule alike — happens inside this one field.</p>
+
+    <div class="box tip">
+      <span class="label">Why GF(2⁸) and not something bigger</span>
+      <p>GF(2⁸) matches the natural 8-bit byte of a computer and gives strong nonlinearity cheaply. A larger field such as GF(2¹⁶) would make the S-box far more expensive without a comparable security gain — this is exactly the "practical security" trade-off from Lecture 2.</p>
+    </div>
+
+    <h2 id="arithmetic">GF(2⁸) addition and multiplication</h2>
+
+    <div class="box def">
+      <span class="label">The two operations</span>
+      <ul>
+        <li><strong>Addition</strong> ↔ bitwise XOR (no carrying — coefficients are mod 2).</li>
+        <li><strong>Multiplication</strong> ↔ polynomial multiplication, reduced modulo P(X).</li>
+        <li>Every nonzero byte has a multiplicative inverse, because P(X) is irreducible.</li>
+      </ul>
+    </div>
+
+    <div class="box ex">
+      <span class="label">Worked example — addition</span>
+      <div class="formula">A(X) = X⁷ + X⁶ + X³ + X + 1       (= 11001011)
+B(X) = X⁴ + X³ + 1                (= 00011001)
+
+A(X) + B(X) = X⁷ + X⁶ + X⁴ + X
+
+as bytes:  11001011 ⊕ 00011001 = 11010010</div>
+      <p>Addition in GF(2⁸) is literally bitwise XOR — no modular reduction is ever needed, because a degree-≤7 polynomial plus another degree-≤7 polynomial is still degree ≤7.</p>
+    </div>
+
+    <div class="box ex">
+      <span class="label">Worked example — multiplication</span>
+      <div class="formula">A(X)·B(X) mod P(X)
+= (X⁷+X⁶+X³+X+1)(X⁴+X³+1)
+= (X¹¹+X¹⁰+X⁷+X⁵+X⁴) + (X¹⁰+X⁹+X⁶+X⁴+X³) + (X⁷+X⁶+X³+X+1)
+= X¹¹ + X⁹ + X⁵ + X + 1        (mod X⁸+X⁴+X³+X+1)
+= X⁷ + X⁶ + X³ + X² + 1</div>
+      <p>Multiplication, unlike addition, can push the degree above 7, which is exactly when the reduction mod P(X) bites.</p>
+    </div>
+
+    <h2 id="euclid">Inverses: the extended Euclidean algorithm</h2>
+
+    <div class="box def">
+      <span class="label">Theorem — Bézout for polynomials</span>
+      <p>Let 𝔽 be a field and A(X), P(X) ∈ 𝔽[X]. There exist S(X), T(X) ∈ 𝔽[X] with</p>
+      <div class="formula">P(X)S(X) + A(X)T(X) = gcd(P(X), A(X))</div>
+      <p>Since P(X) is irreducible and A(X) is not a multiple of it, gcd(P, A) = 1, so A(X)T(X) ≡ 1 (mod P(X)) — meaning <strong>T(X) is exactly A(X)⁻¹ mod P(X)</strong>.</p>
+    </div>
+
+    <div class="box def">
+      <span class="label">The Euclidean algorithm (finds the gcd)</span>
+      <div class="formula">R₀ := P,  R₁ := A
+Rᵢ = Qᵢ·Rᵢ₊₁ + Rᵢ₊₂     (repeated division with remainder)
+…until the remainder is 0; the last nonzero remainder is the gcd.</div>
+    </div>
+
+    <div class="box def">
+      <span class="label">Extended algorithm (also finds S, T)</span>
+      <div class="formula">S₀ = 1,  S₁ = 0,   T₀ = 0,  T₁ = 1
+Sᵢ₊₁ = Sᵢ₋₁ − SᵢQᵢ,   Tᵢ₊₁ = Tᵢ₋₁ − TᵢQᵢ
+
+Invariant:  P(X)Sᵢ(X) + A(X)Tᵢ(X) = Rᵢ(X)   for every i</div>
+      <p>Proof by induction: the base cases i = 0, 1 are immediate from the definitions of S, T. For the step,</p>
+      <div class="formula">PSᵢ + ATᵢ = P(Sᵢ₋₂ − Sᵢ₋₁Qᵢ₋₁) + A(Tᵢ₋₂ − Tᵢ₋₁Qᵢ₋₁)
+           = (PSᵢ₋₂ + ATᵢ₋₂) − (PSᵢ₋₁ + ATᵢ₋₁)Qᵢ₋₁
+           = Rᵢ₋₂ − Rᵢ₋₁Qᵢ₋₁ = Rᵢ</div>
+    </div>
+
+    <div class="box ex">
+      <span class="label">Worked example — inverse of A(X) = X⁷+X⁶+X³+X+1 mod P(X)</span>
+      <p><strong>Step 1 — Euclidean algorithm:</strong></p>
+      <div class="formula">R₀ = P = X⁸+X⁴+X³+X+1
+R₁ = A = X⁷+X⁶+X³+X+1
+
+X⁸+X⁴+X³+X+1 = (X+1)(X⁷+X⁶+X³+X+1) + (X⁶+X²+X)      Q₀ = X+1, R₂ = X⁶+X²+X
+X⁷+X⁶+X³+X+1 = (X+1)(X⁶+X²+X) + 1                    Q₁ = X+1, R₃ = 1  ← gcd
+X⁶+X²+X       = (X⁶+X²+X)·1 + 0                        Q₂ = X⁶+X²+X</div>
+      <p><strong>Step 2 — back-substitute (or run the S, T recurrence):</strong></p>
+      <div class="formula">S₂ = S₀ − S₁Q₁ = 1,        T₂ = T₀ − T₁Q₁ = −(X+1)
+S₃ = S₁ − S₂Q₂ = −(X+1),   T₃ = T₁ − T₂Q₂ = 1 + (X+1)² = X²
+
+⟹  P(X)(X+1) + A(X)·X² = 1</div>
+      <p><strong>Result:</strong></p>
+      <div class="formula">(X⁷+X⁶+X³+X+1)⁻¹ = X²      (mod X⁸+X⁴+X³+X+1)</div>
+    </div>
+
+    <div class="box tip">
+      <span class="label">What to practice</span>
+      <p>Every exam-style inverse computation is this same three-line shape: divide twice (three lines if the gcd isn't reached after one step), then substitute back once. Over GF(2⁸), subtraction and addition are the same XOR, so "−" and "+" in the S, T recurrence can be read as "⊕" throughout.</p>
+    </div>
+
+    <h2 id="state">Hex notation and the state</h2>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>Hexadecimal notation</caption>
+        <tr><th>Decimal</th><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td><td>10</td><td>11</td><td>12</td><td>13</td><td>14</td><td>15</td></tr>
+        <tr><th>Hex</th><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td><td>A</td><td>B</td><td>C</td><td>D</td><td>E</td><td>F</td></tr>
+      </table>
+    </div>
+
+    <p>AES arranges its 128-bit block as a 4×4 matrix of bytes called the <strong>state</strong>, filled column by column:</p>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>A state, given as an example</caption>
+        <tr><td>EA</td><td>04</td><td>65</td><td>85</td></tr>
+        <tr><td>83</td><td>45</td><td>5D</td><td>96</td></tr>
+        <tr><td>5C</td><td>33</td><td>98</td><td>B0</td></tr>
+        <tr><td>F0</td><td>2D</td><td>AD</td><td>C5</td></tr>
+      </table>
+    </div>
+
+    <h2 id="round">Round structure</h2>
+
+    <p>Encryption: AddRoundKey once, then N−1 full rounds (SubBytes → ShiftRows → MixColumns → AddRoundKey), then a final round that <strong>omits MixColumns</strong>. Decryption runs the inverse operations in reverse order, with the round keys applied in reverse.</p>
+
+    <div class="table-wrap">
+      <table class="prose">
+        <caption>The four transformations, and which rounds use them</caption>
+        <tr><th>Transformation</th><th>What it does</th><th>Rounds</th></tr>
+        <tr><td>SubBytes</td><td>Byte-by-byte substitution using the S-box</td><td>All rounds</td></tr>
+        <tr><td>ShiftRows</td><td>A simple row-by-row permutation</td><td>All rounds</td></tr>
+        <tr><td>MixColumns</td><td>Substitutes each byte of a column as a function of the whole column</td><td>Rounds 1–9 (omitted in the final round)</td></tr>
+        <tr><td>AddRoundKey</td><td>Bitwise XOR of the state with a slice of the expanded key</td><td>All rounds, plus once before round 1</td></tr>
+      </table>
+    </div>
+
+    <div class="box tip">
+      <span class="label">Which stage does what</span>
+      <p>SubBytes is the <strong>only nonlinear</strong> step and supplies confusion. ShiftRows and MixColumns are both linear and supply diffusion — ShiftRows across rows, MixColumns down columns, so together every output byte depends on every input byte within two rounds. AddRoundKey is the only place the key enters.</p>
+    </div>
+
+    <h2 id="subbytes">SubBytes: the S-box</h2>
+
+    <p>S(xy) = the entry at row x, column y of the table below, where x, y are hex digits.</p>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>AES S-box — row = high nibble, column = low nibble</caption>
+        <tr><th></th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th></tr>
+        <tr><th>0</th><td>63</td><td>7C</td><td>77</td><td>7B</td><td>F2</td><td>6B</td><td>6F</td><td>C5</td><td>30</td><td>01</td><td>67</td><td>2B</td><td>FE</td><td>D7</td><td>AB</td><td>76</td></tr>
+        <tr><th>1</th><td>CA</td><td>82</td><td>C9</td><td>7D</td><td>FA</td><td>59</td><td>47</td><td>F0</td><td>AD</td><td>D4</td><td>A2</td><td>AF</td><td>9C</td><td>A4</td><td>72</td><td>C0</td></tr>
+        <tr><th>2</th><td>B7</td><td>FD</td><td>93</td><td>26</td><td>36</td><td>3F</td><td>F7</td><td>CC</td><td>34</td><td>A5</td><td>E5</td><td>F1</td><td>71</td><td>D8</td><td>31</td><td>15</td></tr>
+        <tr><th>3</th><td>04</td><td>C7</td><td>23</td><td>C3</td><td>18</td><td>96</td><td>05</td><td>9A</td><td>07</td><td>12</td><td>80</td><td>E2</td><td>EB</td><td>27</td><td>B2</td><td>75</td></tr>
+        <tr><th>4</th><td>09</td><td>83</td><td>2C</td><td>1A</td><td>1B</td><td>6E</td><td>5A</td><td>A0</td><td>52</td><td>3B</td><td>D6</td><td>B3</td><td>29</td><td>E3</td><td>2F</td><td>84</td></tr>
+        <tr><th>5</th><td>53</td><td>D1</td><td>00</td><td>ED</td><td>20</td><td>FC</td><td>B1</td><td>5B</td><td>6A</td><td>CB</td><td>BE</td><td>39</td><td>4A</td><td>4C</td><td>58</td><td>CF</td></tr>
+        <tr><th>6</th><td>D0</td><td>EF</td><td>AA</td><td>FB</td><td>43</td><td>4D</td><td>33</td><td>85</td><td>45</td><td>F9</td><td>02</td><td>7F</td><td>50</td><td>3C</td><td>9F</td><td>A8</td></tr>
+        <tr><th>7</th><td>51</td><td>A3</td><td>40</td><td>8F</td><td>92</td><td>9D</td><td>38</td><td>F5</td><td>BC</td><td>B6</td><td>DA</td><td>21</td><td>10</td><td>FF</td><td>F3</td><td>D2</td></tr>
+        <tr><th>8</th><td>CD</td><td>0C</td><td>13</td><td>EC</td><td>5F</td><td>97</td><td>44</td><td>17</td><td>C4</td><td>A7</td><td>7E</td><td>3D</td><td>64</td><td>5D</td><td>19</td><td>73</td></tr>
+        <tr><th>9</th><td>60</td><td>81</td><td>4F</td><td>DC</td><td>22</td><td>2A</td><td>90</td><td>88</td><td>46</td><td>EE</td><td>B8</td><td>14</td><td>DE</td><td>5E</td><td>0B</td><td>DB</td></tr>
+        <tr><th>A</th><td>E0</td><td>32</td><td>3A</td><td>0A</td><td>49</td><td>06</td><td>24</td><td>5C</td><td>C2</td><td>D3</td><td>AC</td><td>62</td><td>91</td><td>95</td><td>E4</td><td>79</td></tr>
+        <tr><th>B</th><td>E7</td><td>C8</td><td>37</td><td>6D</td><td>8D</td><td>D5</td><td>4E</td><td>A9</td><td>6C</td><td>56</td><td>F4</td><td>EA</td><td>65</td><td>7A</td><td>AE</td><td>08</td></tr>
+        <tr><th>C</th><td>BA</td><td>78</td><td>25</td><td>2E</td><td>1C</td><td>A6</td><td>B4</td><td>C6</td><td>E8</td><td>DD</td><td>74</td><td>1F</td><td>4B</td><td>BD</td><td>8B</td><td>8A</td></tr>
+        <tr><th>D</th><td>70</td><td>3E</td><td>B5</td><td>66</td><td>48</td><td>03</td><td>F6</td><td>0E</td><td>61</td><td>35</td><td>57</td><td>B9</td><td>86</td><td>C1</td><td>1D</td><td>9E</td></tr>
+        <tr><th>E</th><td>E1</td><td>F8</td><td>98</td><td>11</td><td>69</td><td>D9</td><td>8E</td><td>94</td><td>9B</td><td>1E</td><td>87</td><td>E9</td><td>CE</td><td>55</td><td>28</td><td>DF</td></tr>
+        <tr><th>F</th><td>8C</td><td>A1</td><td>89</td><td>0D</td><td>BF</td><td>E6</td><td>42</td><td>68</td><td>41</td><td>99</td><td>2D</td><td>0F</td><td>B0</td><td>54</td><td>BB</td><td>16</td></tr>
+      </table>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <caption>Inverse S-box (for InvSubBytes, used in decryption)</caption>
+        <tr><th></th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th></tr>
+        <tr><th>0</th><td>52</td><td>09</td><td>6A</td><td>D5</td><td>30</td><td>36</td><td>A5</td><td>38</td><td>BF</td><td>40</td><td>A3</td><td>9E</td><td>81</td><td>F3</td><td>D7</td><td>FB</td></tr>
+        <tr><th>1</th><td>7C</td><td>E3</td><td>39</td><td>82</td><td>9B</td><td>2F</td><td>FF</td><td>87</td><td>34</td><td>8E</td><td>43</td><td>44</td><td>C4</td><td>DE</td><td>E9</td><td>CB</td></tr>
+        <tr><th>2</th><td>54</td><td>7B</td><td>94</td><td>32</td><td>A6</td><td>C2</td><td>23</td><td>3D</td><td>EE</td><td>4C</td><td>95</td><td>0B</td><td>42</td><td>FA</td><td>C3</td><td>4E</td></tr>
+        <tr><th>3</th><td>08</td><td>2E</td><td>A1</td><td>66</td><td>28</td><td>D9</td><td>24</td><td>B2</td><td>76</td><td>5B</td><td>A2</td><td>49</td><td>6D</td><td>8B</td><td>D1</td><td>25</td></tr>
+        <tr><th>4</th><td>72</td><td>F8</td><td>F6</td><td>64</td><td>86</td><td>68</td><td>98</td><td>16</td><td>D4</td><td>A4</td><td>5C</td><td>CC</td><td>5D</td><td>65</td><td>B6</td><td>92</td></tr>
+        <tr><th>5</th><td>6C</td><td>70</td><td>48</td><td>50</td><td>FD</td><td>ED</td><td>B9</td><td>DA</td><td>5E</td><td>15</td><td>46</td><td>57</td><td>A7</td><td>8D</td><td>9D</td><td>84</td></tr>
+        <tr><th>6</th><td>90</td><td>D8</td><td>AB</td><td>00</td><td>8C</td><td>BC</td><td>D3</td><td>0A</td><td>F7</td><td>E4</td><td>58</td><td>05</td><td>B8</td><td>B3</td><td>45</td><td>06</td></tr>
+        <tr><th>7</th><td>D0</td><td>2C</td><td>1E</td><td>8F</td><td>CA</td><td>3F</td><td>0F</td><td>02</td><td>C1</td><td>AF</td><td>BD</td><td>03</td><td>01</td><td>13</td><td>8A</td><td>6B</td></tr>
+        <tr><th>8</th><td>3A</td><td>91</td><td>11</td><td>41</td><td>4F</td><td>67</td><td>DC</td><td>EA</td><td>97</td><td>F2</td><td>CF</td><td>CE</td><td>F0</td><td>B4</td><td>E6</td><td>73</td></tr>
+        <tr><th>9</th><td>96</td><td>AC</td><td>74</td><td>22</td><td>E7</td><td>AD</td><td>35</td><td>85</td><td>E2</td><td>F9</td><td>37</td><td>E8</td><td>1C</td><td>75</td><td>DF</td><td>6E</td></tr>
+        <tr><th>A</th><td>47</td><td>F1</td><td>1A</td><td>71</td><td>1D</td><td>29</td><td>C5</td><td>89</td><td>6F</td><td>B7</td><td>62</td><td>0E</td><td>AA</td><td>18</td><td>BE</td><td>1B</td></tr>
+        <tr><th>B</th><td>FC</td><td>56</td><td>3E</td><td>4B</td><td>C6</td><td>D2</td><td>79</td><td>20</td><td>9A</td><td>DB</td><td>C0</td><td>FE</td><td>78</td><td>CD</td><td>5A</td><td>F4</td></tr>
+        <tr><th>C</th><td>1F</td><td>DD</td><td>A8</td><td>33</td><td>88</td><td>07</td><td>C7</td><td>31</td><td>B1</td><td>12</td><td>10</td><td>59</td><td>27</td><td>80</td><td>EC</td><td>5F</td></tr>
+        <tr><th>D</th><td>60</td><td>51</td><td>7F</td><td>A9</td><td>19</td><td>B5</td><td>4A</td><td>0D</td><td>2D</td><td>E5</td><td>7A</td><td>9F</td><td>93</td><td>C9</td><td>9C</td><td>EF</td></tr>
+        <tr><th>E</th><td>A0</td><td>E0</td><td>3B</td><td>4D</td><td>AE</td><td>2A</td><td>F5</td><td>B0</td><td>C8</td><td>EB</td><td>BB</td><td>3C</td><td>83</td><td>53</td><td>99</td><td>61</td></tr>
+        <tr><th>F</th><td>17</td><td>2B</td><td>04</td><td>7E</td><td>BA</td><td>77</td><td>D6</td><td>26</td><td>E1</td><td>69</td><td>14</td><td>63</td><td>55</td><td>21</td><td>0C</td><td>7D</td></tr>
+      </table>
+    </div>
+
+    <div class="box ex">
+      <span class="label">Worked example — applying SubBytes to a state</span>
+      <div class="formula">EA 04 65 85          87 F2 4D 97
+83 45 5D 96    →     EC 6E 4C 90
+5C 33 98 B0          4A C3 46 E7
+F0 2D AD C5          8C D8 95 A6</div>
+      <p>Every byte is looked up independently — no byte's substitution depends on any other, which is exactly why SubBytes alone gives no diffusion and must be paired with ShiftRows and MixColumns.</p>
+    </div>
+
+    <h2 id="sbox-design">Why the S-box is built this way</h2>
+
+    <p>The nonzero elements of GF(2⁸) satisfy a²⁵⁵ = 1 (Lagrange's theorem on the multiplicative group), so for every a ≠ 0:</p>
+
+    <div class="formula">a⁻¹ = a²⁵⁴</div>
+
+    <div class="box tip">
+      <span class="label">Why the inverse gives confusion</span>
+      <p>The inverse is the power map a ↦ a²⁵⁴ — a very high-degree, highly nonlinear function of the input bits. That nonlinearity is exactly what confusion means: a simple algebraic description of the key–ciphertext relationship should not exist. It is the field-theoretic analogue of DES's ad-hoc S-boxes, except here it is derived from one clean algebraic fact rather than hand-tuned.</p>
+    </div>
+
+    <p>The S-box itself is <em>not</em> the raw inverse map — a pure inverse has an undesirable fixed point structure, so an invertible <strong>affine transformation</strong> is layered on top to remove it.</p>
+
+    <div class="box def">
+      <span class="label">Definition — S-box construction</span>
+      <p>Given byte x = x₇x₆x₅x₄x₃x₂x₁x₀:</p>
+      <ol>
+        <li>Compute y = x⁻¹ in GF(2⁸) (by convention 0⁻¹ := 0).</li>
+        <li>Apply the fixed affine map z = M·y + c over 𝔽₂:
+          <div class="formula">⎛1 0 0 0 1 1 1 1⎞ ⎛y₀⎞   ⎛1⎞   ⎛z₀⎞
+⎜1 1 0 0 0 1 1 1⎟ ⎜y₁⎟   ⎜1⎟   ⎜z₁⎟
+⎜1 1 1 0 0 0 1 1⎟ ⎜y₂⎟   ⎜0⎟   ⎜z₂⎟
+⎜1 1 1 1 0 0 0 1⎟ ⎜y₃⎟ + ⎜0⎟ = ⎜z₃⎟
+⎜1 1 1 1 1 0 0 0⎟ ⎜y₄⎟   ⎜0⎟   ⎜z₄⎟
+⎜0 1 1 1 1 1 0 0⎟ ⎜y₅⎟   ⎜1⎟   ⎜z₅⎟
+⎜0 0 1 1 1 1 1 0⎟ ⎜y₆⎟   ⎜1⎟   ⎜z₆⎟
+⎝0 0 0 1 1 1 1 1⎠ ⎝y₇⎠   ⎝0⎠   ⎝z₇⎠</div>
+        </li>
+        <li>Output z = z₇z₆z₅z₄z₃z₂z₁z₀.</li>
+      </ol>
+    </div>
+
+    <div class="box ex">
+      <span class="label">Worked examples</span>
+      <div class="formula">00 → x=00000000 →ˣ⁻¹ y=00000000 → z=01100011 → 63
+01 → x=00000001 →ˣ⁻¹ y=00000001 → z=01111100 → 7C
+CB → x=11001011 →ˣ⁻¹ y=00000100 → z=00011111 → 1F</div>
+      <p>These are exactly the 00, 01 and CB entries of the S-box table above — the table is precomputed once from this construction and then just looked up.</p>
+    </div>
+
+    <h2 id="shiftrows">ShiftRows</h2>
+
+    <div class="box def">
+      <span class="label">Definition — ShiftRows</span>
+      <ul>
+        <li>Row 1: no change</li>
+        <li>Row 2: 1-byte circular left shift</li>
+        <li>Row 3: 2-byte circular left shift</li>
+        <li>Row 4: 3-byte circular left shift</li>
+      </ul>
+      <p>InvShiftRows shifts right by the same amounts.</p>
+    </div>
+
+    <div class="box ex">
+      <span class="label">Worked example</span>
+      <div class="formula">87 F2 4D 97          87 F2 4D 97
+EC 6E 4C 90    →     6E 4C 90 EC
+4A C3 46 E7          46 E7 4A C3
+8C D8 95 A6          A6 8C D8 95</div>
+    </div>
+
+    <p>ShiftRows spreads bytes <em>across columns</em>: after this step, each of the four columns contains one byte originally from every column, which is what lets MixColumns finish the job of mixing the whole state.</p>
+
+    <h2 id="mixcolumns">MixColumns</h2>
+
+    <p>Each column of the state is left-multiplied by a fixed 4×4 matrix over GF(2⁸):</p>
+
+    <div class="formula">⎛02 03 01 01⎞ ⎛c₀,₀ c₀,₁ c₀,₂ c₀,₃⎞   ⎛d₀,₀ d₀,₁ d₀,₂ d₀,₃⎞
+⎜01 02 03 01⎟ ⎜c₁,₀ c₁,₁ c₁,₂ c₁,₃⎟   ⎜d₁,₀ d₁,₁ d₁,₂ d₁,₃⎟
+⎜01 01 02 03⎟ ⎜c₂,₀ c₂,₁ c₂,₂ c₂,₃⎟ = ⎜d₂,₀ d₂,₁ d₂,₂ d₂,₃⎟
+⎝03 01 01 02⎠ ⎝c₃,₀ c₃,₁ c₃,₂ c₃,₃⎠   ⎝d₃,₀ d₃,₁ d₃,₂ d₃,₃⎠
+     =: M</div>
+
+    <p>M is invertible over GF(2⁸); InvMixColumns multiplies by M⁻¹.</p>
+
+    <div class="box ex">
+      <span class="label">Worked example — one column</span>
+      <div class="formula">⎛X   X+1  1    1  ⎞ ⎛87  (=X⁷+X²+X+1)          ⎞
+⎜1    X   X+1  1  ⎟ ⎜6E  (=X⁶+X⁵+X³+X²+X)      ⎟
+⎜1    1    X   X+1⎟ ⎜46  (=X⁶+X²+X)            ⎟
+⎝X+1  1    1    X ⎠ ⎝A6  (=X⁷+X⁵+X²+X)          ⎠
+
+first entry = X(X⁷+X²+X+1) + (X+1)(X⁶+X⁵+X³+X²+X) + 1(X⁶+X²+X) + 1(X⁷+X⁵+X²+X)
+            = X⁸+X⁶+X⁴+X³+X²
+            = X⁶+X²+X+1   (mod X⁸+X⁴+X³+X+1)
+            = 0100 0111 = 47</div>
+      <p>Repeating for all four columns of the ShiftRows output:</p>
+      <div class="formula">87 F2 4D 97          47 40 A3 4C
+6E 4C 90 EC    →     37 D4 70 9F
+46 E7 4A C3          94 E4 3A 42
+A6 8C D8 95          ED A5 A6 BC</div>
+    </div>
+
+    <div class="box tip">
+      <span class="label">Why the matrix entries are 01, 02, 03</span>
+      <p>Multiplying by 01 is the identity; multiplying by 02 is X (a left shift, reduced mod P(X) if it overflows); multiplying by 03 is X+1, i.e. "double, then XOR the original in". These are the cheapest nontrivial GF(2⁸) multiplications, which is why MixColumns is fast in both hardware and software despite mixing every byte in a column.</p>
+    </div>
+
+    <h2 id="addroundkey">AddRoundKey</h2>
+
+    <div class="box def">
+      <span class="label">Definition — AddRoundKey</span>
+      <p>Bitwise XOR of the 128-bit state with 128 bits of the expanded key. Its own inverse: XOR the same round key again.</p>
+    </div>
+
+    <div class="box ex">
+      <span class="label">Worked example</span>
+      <div class="formula">47 40 A3 4C     AC 19 28 57     EB 59 8B 1B
+37 D4 70 9F     77 FA D1 5C     40 2E A1 C3
+94 E4 3A 42  ⊕  66 DC 29 00  =  F2 38 13 42
+ED A5 A6 BC     F3 21 41 6E     1E 84 E7 D2
+ current state     round key      output
+
+one byte:  47 = 01000111
+           AC = 10101100
+        ⊕ ----------------
+           EB = 11101011</div>
+    </div>
+
+    <h2 id="keyexpansion">Key expansion</h2>
+
+    <p>The cipher key K, as four 32-bit words, is expanded into 4(N<sub>r</sub>+1) words W(0), W(1), … — one 128-bit round key per round plus the initial whitening key.</p>
+
+    <div class="box def">
+      <span class="label">Definition — key expansion recurrence</span>
+      <div class="formula">W(i) = { W(i−4) ⊕ W(i−1)              if i is not a multiple of 4
+        { W(i−4) ⊕ T(W(i−1))         if i is a multiple of 4</div>
+      <p>where, writing W(i−1) = (w₀,ᵢ₋₁, w₁,ᵢ₋₁, w₂,ᵢ₋₁, w₃,ᵢ₋₁), the transformation T does:</p>
+      <ol>
+        <li><strong>RotWord</strong> — circular left shift by one byte: (w₁,ᵢ₋₁, w₂,ᵢ₋₁, w₃,ᵢ₋₁, w₀,ᵢ₋₁)</li>
+        <li><strong>SubWord</strong> — apply the S-box to each byte: (S(w₁,ᵢ₋₁), S(w₂,ᵢ₋₁), S(w₃,ᵢ₋₁), S(w₀,ᵢ₋₁))</li>
+        <li>Compute the round constant r(i) = X<sup>(i−4)/4</sup> in GF(2⁸)</li>
+        <li>T(W(i−1)) = (S(w₁,ᵢ₋₁) ⊕ r(i), S(w₂,ᵢ₋₁), S(w₃,ᵢ₋₁), S(w₀,ᵢ₋₁))</li>
+      </ol>
+    </div>
+
+    <div class="box tip">
+      <span class="label">Reading this recurrence for an exam</span>
+      <ul>
+        <li>Every fourth word is "refreshed" through the S-box and a round-dependent constant; the three words in between are plain XOR chains. This is what breaks the linearity that made the LFSR cipher's known-plaintext attack (Lecture 1) work.</li>
+        <li>The S-box appears twice in AES: once in SubBytes on the data, once in SubWord in the key schedule. It is the single nonlinear primitive the whole cipher is built from.</li>
+        <li>The round constant r(i) makes each group of four expanded words distinct even if RotWord+SubWord alone would repeat a pattern.</li>
+      </ul>
+    </div>
+
+    <h2 id="security">AES: security</h2>
+
+    <p>Only AddRoundKey uses the key directly — but because SubWord folds the key through the S-box every four words, every round key still depends nonlinearly on the original key.</p>
+
+    <div class="box attack">
+      <span class="label">Brute force</span>
+      <p>2<sup>128</sup> candidate keys for AES-128 — utterly infeasible, unlike DES's 2<sup>56</sup>.</p>
+    </div>
+
+    <div class="box attack">
+      <span class="label">Best known attack — biclique cryptanalysis</span>
+      <p>Bogdanov, Khovratovich and Rechberger, ASIACRYPT 2011. A small, structured improvement over brute force:</p>
+      <div class="formula">AES-128:  2^126.1
+AES-192:  2^189.7
+AES-256:  2^254.4</div>
+      <p>Each is only a few bits better than exhaustive search — nowhere near a practical break. AES-128 remains unbroken in any practical sense.</p>
+    </div>
+
+    <h2 id="recap">Exam recap</h2>
+
+    <div class="table-wrap">
+      <table class="prose">
+        <caption>Numbers most likely to be asked for</caption>
+        <tr><th>Quantity</th><th>Value</th></tr>
+        <tr><td>Block size</td><td>128 bits, always</td></tr>
+        <tr><td>Key sizes / rounds</td><td>128→10, 192→12, 256→14</td></tr>
+        <tr><td>AES modulus P(X)</td><td>X⁸ + X⁴ + X³ + X + 1</td></tr>
+        <tr><td>Inverse via Fermat/Lagrange</td><td>a⁻¹ = a²⁵⁴, since a²⁵⁵ = 1</td></tr>
+        <tr><td>MixColumns matrix entries</td><td>01, 02 (=X), 03 (=X+1) only</td></tr>
+        <tr><td>Brute force</td><td>2¹²⁸ for AES-128</td></tr>
+        <tr><td>Best known attack (biclique)</td><td>2^126.1 / 2^189.7 / 2^254.4</td></tr>
+      </table>
+    </div>
+
+    <div class="box tip">
+      <span class="label">Likely exam questions</span>
+      <ol>
+        <li>Compute A(X)+B(X) and A(X)·B(X) in GF(2⁸) for given bytes.</li>
+        <li>Find a polynomial's inverse mod P(X) using the extended Euclidean algorithm, showing the division steps.</li>
+        <li>Explain why AES is an SPN rather than a Feistel cipher, and what that implies for decryption.</li>
+        <li>State which transformation supplies confusion and which supply diffusion, with justification.</li>
+        <li>Trace one round (SubBytes, ShiftRows, MixColumns, AddRoundKey) on a small given state.</li>
+        <li>Explain the role of the affine map in the S-box construction, beyond the raw field inverse.</li>
+      </ol>
+    </div>
+
+    <nav class="pager">
+      <a href="02-symmetric-encryption.html">← 02 · Symmetric Encryption</a>
+      <span>Next lecture →</span>
+    </nav>
+  </article>
+</main>
+
+<footer class="site">
+  <div class="inner">
+    Slide sources: Paar &amp; Pelzl; Stallings &amp; Brown; Stallings, <em>Cryptography and Network Security</em>; Trappe &amp; Washington.
+  </div>
+</footer>
+
+</body>
+</html>
